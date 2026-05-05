@@ -18,6 +18,38 @@ class WebLibraryAppTest(unittest.TestCase):
         self.assertGreaterEqual(len(data["shelves"]), 1)
         self.assertIn("stock_adjust", data["reasons"])
 
+    def test_inbound_form_uses_single_code_field(self) -> None:
+        inbound_section = INDEX_HTML.split('<section id="inbound" class="page">', 1)[1].split(
+            '<section id="inventory" class="page">',
+            1,
+        )[0]
+
+        self.assertIn('id="inBarcode"', inbound_section)
+        self.assertNotIn('id="inIsbn"', inbound_section)
+        self.assertNotIn('id="inBookNo"', inbound_section)
+        self.assertNotIn('id="inCategory"', inbound_section)
+
+    def test_inventory_editor_omits_removed_book_fields(self) -> None:
+        inventory_section = INDEX_HTML.split('<section id="inventory" class="page">', 1)[1].split(
+            '<section id="readers" class="page">',
+            1,
+        )[0]
+
+        self.assertNotIn('id="editIsbn"', inventory_section)
+        self.assertNotIn('id="editBookNo"', inventory_section)
+        self.assertNotIn('id="editCategory"', inventory_section)
+
+    def test_settings_include_edit_and_delete_controls(self) -> None:
+        settings_section = INDEX_HTML.split('<section id="settings" class="page">', 1)[1].split(
+            "</section>",
+            1,
+        )[0]
+
+        self.assertIn("updateShelf()", settings_section)
+        self.assertIn("deleteShelf()", settings_section)
+        self.assertIn("updateReason()", settings_section)
+        self.assertIn("deleteReason()", settings_section)
+
 
 if __name__ == "__main__":
     unittest.main()

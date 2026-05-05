@@ -449,9 +449,6 @@ class LibraryApp(tk.Tk):
             ("title", "书名", 28),
             ("author", "作者", 18),
             ("publisher", "出版社", 18),
-            ("isbn", "ISBN", 18),
-            ("book_no", "书号", 18),
-            ("category", "分类", 16),
         ]
         for index, (key, label, width) in enumerate(fields):
             ttk.Label(form, text=label).grid(row=index // 4, column=(index % 4) * 2, sticky="w", padx=4, pady=4)
@@ -459,19 +456,19 @@ class LibraryApp(tk.Tk):
             entry.grid(row=index // 4, column=(index % 4) * 2 + 1, sticky="ew", padx=4, pady=4)
             if key == "barcode":
                 entry.bind("<Return>", lambda event: self.lookup_inbound_barcode())
-        ttk.Label(form, text="书架").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(form, text="书架").grid(row=1, column=0, sticky="w", padx=4, pady=4)
         self.inbound_shelf_combo = ttk.Combobox(form, state="readonly", width=16)
-        self.inbound_shelf_combo.grid(row=2, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(form, text="数量").grid(row=2, column=2, sticky="w", padx=4, pady=4)
+        self.inbound_shelf_combo.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
+        ttk.Label(form, text="数量").grid(row=1, column=2, sticky="w", padx=4, pady=4)
         self.inbound_qty_var = tk.StringVar(value="1")
-        ttk.Entry(form, textvariable=self.inbound_qty_var, width=10).grid(row=2, column=3, sticky="w", padx=4, pady=4)
-        ttk.Label(form, text="备注").grid(row=2, column=4, sticky="w", padx=4, pady=4)
+        ttk.Entry(form, textvariable=self.inbound_qty_var, width=10).grid(row=1, column=3, sticky="w", padx=4, pady=4)
+        ttk.Label(form, text="备注").grid(row=1, column=4, sticky="w", padx=4, pady=4)
         self.inbound_note_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.inbound_note_var, width=24).grid(row=2, column=5, sticky="ew", padx=4, pady=4)
-        ttk.Button(form, text="查询条码", command=self.lookup_inbound_barcode).grid(row=2, column=6, padx=4)
-        ttk.Button(form, text="添加流水", command=self.add_inbound_item).grid(row=2, column=7, padx=4)
-        ttk.Button(form, text="修改选中", command=self.update_inbound_item).grid(row=2, column=8, padx=4)
-        ttk.Button(form, text="删除选中", command=self.delete_inbound_item).grid(row=2, column=9, padx=4)
+        ttk.Entry(form, textvariable=self.inbound_note_var, width=24).grid(row=1, column=5, sticky="ew", padx=4, pady=4)
+        ttk.Button(form, text="查询条码", command=self.lookup_inbound_barcode).grid(row=1, column=6, padx=4)
+        ttk.Button(form, text="添加流水", command=self.add_inbound_item).grid(row=1, column=7, padx=4)
+        ttk.Button(form, text="修改选中", command=self.update_inbound_item).grid(row=1, column=8, padx=4)
+        ttk.Button(form, text="删除选中", command=self.delete_inbound_item).grid(row=1, column=9, padx=4)
 
         self.inbound_tree = self.make_tree(
             tab,
@@ -481,9 +478,6 @@ class LibraryApp(tk.Tk):
                 ("title", "书名", 220),
                 ("author", "作者", 100),
                 ("publisher", "出版社", 120),
-                ("isbn", "ISBN", 130),
-                ("book_no", "书号", 120),
-                ("category", "分类", 90),
                 ("shelf", "书架", 100),
                 ("quantity", "数量", 70),
                 ("note", "备注", 160),
@@ -572,9 +566,9 @@ class LibraryApp(tk.Tk):
         values = tree_selection_values(self.inbound_tree)
         if not values:
             return
-        keys = ["id", "barcode", "title", "author", "publisher", "isbn", "book_no", "category", "shelf", "quantity", "note"]
+        keys = ["id", "barcode", "title", "author", "publisher", "shelf", "quantity", "note"]
         row = dict(zip(keys, values))
-        for field in ["barcode", "title", "author", "publisher", "isbn", "book_no", "category"]:
+        for field in ["barcode", "title", "author", "publisher"]:
             self.inbound_vars[field].set(row[field])
         self.inbound_shelf_combo.set(row["shelf"])
         self.inbound_qty_var.set(str(row["quantity"]))
@@ -616,9 +610,6 @@ class LibraryApp(tk.Tk):
                     row["title"],
                     row["author"],
                     row["publisher"],
-                    row["isbn"],
-                    row["book_no"],
-                    row["category"],
                     row["shelf_name"],
                     row["quantity"],
                     row["note"],
@@ -647,9 +638,6 @@ class LibraryApp(tk.Tk):
                 ("title", "书名", 220),
                 ("author", "作者", 100),
                 ("publisher", "出版社", 120),
-                ("isbn", "ISBN", 130),
-                ("book_no", "书号", 120),
-                ("category", "分类", 90),
                 ("shelf", "书架", 100),
                 ("quantity", "库存", 70),
                 ("price", "price", 0),
@@ -667,9 +655,6 @@ class LibraryApp(tk.Tk):
             ("title", "书名", 28),
             ("author", "作者", 16),
             ("publisher", "出版社", 18),
-            ("isbn", "ISBN", 18),
-            ("book_no", "书号", 18),
-            ("category", "分类", 14),
             ("price", "价格", 10),
             ("publish_date", "出版日期", 12),
         ]
@@ -716,9 +701,6 @@ class LibraryApp(tk.Tk):
                     row["title"],
                     row["author"],
                     row["publisher"],
-                    row["isbn"],
-                    row["book_no"],
-                    row["category"],
                     row["shelf_name"],
                     row["quantity"],
                     row["price"],
@@ -738,9 +720,6 @@ class LibraryApp(tk.Tk):
             "title",
             "author",
             "publisher",
-            "isbn",
-            "book_no",
-            "category",
             "shelf",
             "quantity",
             "price",
@@ -755,7 +734,7 @@ class LibraryApp(tk.Tk):
         }
         for field in self.inventory_vars:
             self.inventory_vars[field].set("")
-        for field in ["barcode", "title", "author", "publisher", "isbn", "book_no", "category", "price", "publish_date", "description"]:
+        for field in ["barcode", "title", "author", "publisher", "price", "publish_date", "description"]:
             self.inventory_vars[field].set(row.get(field, ""))
         self.inventory_qty_var.set(str(row["quantity"]))
 
@@ -1185,12 +1164,14 @@ class LibraryApp(tk.Tk):
         ttk.Label(row, text="备注").pack(side="left")
         ttk.Entry(row, textvariable=self.new_shelf_note_var, width=30).pack(side="left", padx=6)
         ttk.Button(row, text="新增书架", command=self.add_shelf).pack(side="left")
-        ttk.Button(row, text="停用/启用选中", command=self.toggle_selected_shelf).pack(side="left", padx=6)
+        ttk.Button(row, text="保存修改", command=self.update_selected_shelf).pack(side="left", padx=6)
+        ttk.Button(row, text="删除选中", command=self.delete_selected_shelf).pack(side="left")
         self.settings_shelves_tree = self.make_tree(
             shelves_frame,
             [("id", "id", 0), ("name", "书架名称", 180), ("active", "状态", 80), ("note", "备注", 260)],
             height=6,
         )
+        self.settings_shelves_tree.bind("<<TreeviewSelect>>", lambda event: self.load_selected_shelf())
 
         reasons_frame = ttk.LabelFrame(tab, text="原因配置", padding=10)
         reasons_frame.pack(fill="both", expand=True)
@@ -1211,12 +1192,14 @@ class LibraryApp(tk.Tk):
         ttk.Label(rrow, text="原因").pack(side="left")
         ttk.Entry(rrow, textvariable=self.new_reason_var, width=24).pack(side="left", padx=6)
         ttk.Button(rrow, text="新增原因", command=self.add_reason).pack(side="left")
-        ttk.Button(rrow, text="停用/启用选中", command=self.toggle_selected_reason).pack(side="left", padx=6)
+        ttk.Button(rrow, text="保存修改", command=self.update_selected_reason).pack(side="left", padx=6)
+        ttk.Button(rrow, text="删除选中", command=self.delete_selected_reason).pack(side="left")
         self.settings_reasons_tree = self.make_tree(
             reasons_frame,
             [("id", "id", 0), ("name", "原因", 220), ("active", "状态", 80)],
             height=7,
         )
+        self.settings_reasons_tree.bind("<<TreeviewSelect>>", lambda event: self.load_selected_reason())
 
     def save_settings_days(self) -> None:
         def action() -> None:
@@ -1237,16 +1220,36 @@ class LibraryApp(tk.Tk):
 
         self.run_safe(action, "书架已新增")
 
-    def toggle_selected_shelf(self) -> None:
+    def load_selected_shelf(self) -> None:
+        values = tree_selection_values(self.settings_shelves_tree)
+        if not values:
+            return
+        self.new_shelf_name_var.set(values[1])
+        self.new_shelf_note_var.set(values[3])
+
+    def update_selected_shelf(self) -> None:
         values = tree_selection_values(self.settings_shelves_tree)
         if not values:
             messagebox.showwarning("提示", "请选择书架", parent=self)
             return
 
         def action() -> None:
-            self.service.set_shelf_active(int(values[0]), values[2] == "停用")
+            self.service.update_shelf(int(values[0]), self.new_shelf_name_var.get(), self.new_shelf_note_var.get())
 
-        self.run_safe(action, "书架状态已更新")
+        self.run_safe(action, "书架已修改")
+
+    def delete_selected_shelf(self) -> None:
+        values = tree_selection_values(self.settings_shelves_tree)
+        if not values:
+            messagebox.showwarning("提示", "请选择书架", parent=self)
+            return
+        if not messagebox.askyesno("确认", "确定删除选中的书架？历史记录会保留。", parent=self):
+            return
+
+        def action() -> None:
+            self.service.set_shelf_active(int(values[0]), False)
+
+        self.run_safe(action, "书架已删除")
 
     def add_reason(self) -> None:
         def action() -> None:
@@ -1256,16 +1259,36 @@ class LibraryApp(tk.Tk):
 
         self.run_safe(action, "原因已新增")
 
-    def toggle_selected_reason(self) -> None:
+    def load_selected_reason(self) -> None:
+        values = tree_selection_values(self.settings_reasons_tree)
+        if not values:
+            return
+        self.new_reason_var.set(values[1])
+
+    def update_selected_reason(self) -> None:
         values = tree_selection_values(self.settings_reasons_tree)
         if not values:
             messagebox.showwarning("提示", "请选择原因", parent=self)
             return
 
         def action() -> None:
-            self.service.set_reason_active(int(values[0]), values[2] == "停用")
+            category = REASON_BY_LABEL[self.reason_category_var.get()]
+            self.service.update_reason(int(values[0]), category, self.new_reason_var.get())
 
-        self.run_safe(action, "原因状态已更新")
+        self.run_safe(action, "原因已修改")
+
+    def delete_selected_reason(self) -> None:
+        values = tree_selection_values(self.settings_reasons_tree)
+        if not values:
+            messagebox.showwarning("提示", "请选择原因", parent=self)
+            return
+        if not messagebox.askyesno("确认", "确定删除选中的原因？历史日志会保留。", parent=self):
+            return
+
+        def action() -> None:
+            self.service.set_reason_active(int(values[0]), False)
+
+        self.run_safe(action, "原因已删除")
 
     def refresh_settings(self) -> None:
         if not hasattr(self, "settings_shelves_tree"):

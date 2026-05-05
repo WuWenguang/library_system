@@ -11,12 +11,9 @@ from .db import Database
 
 BOOK_FIELDS = [
     "barcode",
-    "isbn",
-    "book_no",
     "title",
     "author",
     "publisher",
-    "category",
     "price",
     "publish_date",
     "description",
@@ -110,6 +107,18 @@ class LibraryService:
         if not name:
             raise LibraryError("书架名称不能为空")
         with self.db.transaction() as conn:
+            existing = conn.execute(
+                "SELECT * FROM shelves WHERE name = ?",
+                (name,),
+            ).fetchone()
+            if existing:
+                if existing["active"]:
+                    raise LibraryError("书架名称已存在")
+                conn.execute(
+                    "UPDATE shelves SET note = ?, active = 1 WHERE id = ?",
+                    (clean_text(note), existing["id"]),
+                )
+                return int(existing["id"])
             cur = conn.execute(
                 """
                 INSERT INTO shelves(name, note, active, created_at)
@@ -119,12 +128,36 @@ class LibraryService:
             )
             return int(cur.lastrowid)
 
+    def update_shelf(self, shelf_id: int, name: str, note: str = "") -> None:
+        name = clean_text(name)
+        if not name:
+            raise LibraryError("书架名称不能为空")
+        with self.db.transaction() as conn:
+            duplicate = conn.execute(
+                "SELECT id FROM shelves WHERE name = ? AND id != ?",
+                (name, shelf_id),
+            ).fetchone()
+            if duplicate:
+                raise LibraryError("书架名称已存在")
+            cur = conn.execute(
+                """
+                UPDATE shelves
+                SET name = ?, note = ?
+                WHERE id = ?
+                """,
+                (name, clean_text(note), shelf_id),
+            )
+            if cur.rowcount == 0:
+                raise LibraryError("书架不存在")
+
     def set_shelf_active(self, shelf_id: int, active: bool) -> None:
         with self.db.transaction() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE shelves SET active = ? WHERE id = ?",
                 (1 if active else 0, shelf_id),
             )
+            if cur.rowcount == 0:
+                raise LibraryError("书架不存在")
 
     def list_shelves(self, active_only: bool = True) -> list[dict[str, Any]]:
         sql = "SELECT * FROM shelves"
@@ -140,6 +173,18 @@ class LibraryService:
         if not category or not name:
             raise LibraryError("原因分类和名称不能为空")
         with self.db.transaction() as conn:
+            existing = conn.execute(
+                "SELECT * FROM reason_codes WHERE category = ? AND name = ?",
+                (category, name),
+            ).fetchone()
+            if existing:
+                if existing["active"]:
+                    raise LibraryError("原因已存在")
+                conn.execute(
+                    "UPDATE reason_codes SET active = 1 WHERE id = ?",
+                    (existing["id"],),
+                )
+                return int(existing["id"])
             cur = conn.execute(
                 """
                 INSERT INTO reason_codes(category, name, active, created_at)
@@ -149,12 +194,37 @@ class LibraryService:
             )
             return int(cur.lastrowid)
 
+    def update_reason(self, reason_id: int, category: str, name: str) -> None:
+        category = clean_text(category)
+        name = clean_text(name)
+        if not category or not name:
+            raise LibraryError("原因分类和名称不能为空")
+        with self.db.transaction() as conn:
+            duplicate = conn.execute(
+                "SELECT id FROM reason_codes WHERE category = ? AND name = ? AND id != ?",
+                (category, name, reason_id),
+            ).fetchone()
+            if duplicate:
+                raise LibraryError("原因已存在")
+            cur = conn.execute(
+                """
+                UPDATE reason_codes
+                SET category = ?, name = ?
+                WHERE id = ?
+                """,
+                (category, name, reason_id),
+            )
+            if cur.rowcount == 0:
+                raise LibraryError("原因不存在")
+
     def set_reason_active(self, reason_id: int, active: bool) -> None:
         with self.db.transaction() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE reason_codes SET active = ? WHERE id = ?",
                 (1 if active else 0, reason_id),
             )
+            if cur.rowcount == 0:
+                raise LibraryError("原因不存在")
 
     def list_reasons(
         self,
@@ -257,21 +327,18 @@ class LibraryService:
             cur = conn.execute(
                 """
                 INSERT INTO inbound_items(
-                    batch_id, book_id, barcode, isbn, book_no, title, author,
-                    publisher, category, shelf_id, quantity, note, created_at, updated_at
+                    batch_id, book_id, barcode, title, author, publisher,
+                    shelf_id, quantity, note, created_at, updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     batch_id,
                     book_id,
                     data["barcode"],
-                    data["isbn"],
-                    data["book_no"],
                     data["title"],
                     data["author"],
                     data["publisher"],
-                    data["category"],
                     shelf_id,
                     qty,
                     clean_text(note),
@@ -314,20 +381,16 @@ class LibraryService:
             conn.execute(
                 """
                 UPDATE inbound_items
-                SET book_id = ?, barcode = ?, isbn = ?, book_no = ?, title = ?,
-                    author = ?, publisher = ?, category = ?, shelf_id = ?,
+                SET book_id = ?, barcode = ?, title = ?, author = ?, publisher = ?, shelf_id = ?,
                     quantity = ?, note = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     book_id,
                     data["barcode"],
-                    data["isbn"],
-                    data["book_no"],
                     data["title"],
                     data["author"],
                     data["publisher"],
-                    data["category"],
                     shelf_id,
                     qty,
                     clean_text(note),
@@ -382,19 +445,16 @@ class LibraryService:
                     cur = conn.execute(
                         """
                         INSERT INTO books(
-                            barcode, isbn, book_no, title, author, publisher, category,
-                            price, publish_date, description, created_at, updated_at
+                            barcode, title, author, publisher, price, publish_date,
+                            description, created_at, updated_at
                         )
-                        VALUES(?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?)
+                        VALUES(?, ?, ?, ?, '', '', '', ?, ?)
                         """,
                         (
                             item["barcode"],
-                            item["isbn"],
-                            item["book_no"],
                             item["title"],
                             item["author"],
                             item["publisher"],
-                            item["category"],
                             now,
                             now,
                         ),
@@ -437,12 +497,9 @@ class LibraryService:
                 inv.quantity,
                 b.id AS book_id,
                 b.barcode,
-                b.isbn,
-                b.book_no,
                 b.title,
                 b.author,
                 b.publisher,
-                b.category,
                 b.price,
                 b.publish_date,
                 b.description,
@@ -460,10 +517,10 @@ class LibraryService:
             sql += """
                 AND (
                     b.title LIKE ? OR b.barcode LIKE ? OR b.author LIKE ? OR
-                    b.publisher LIKE ? OR b.book_no LIKE ? OR b.isbn LIKE ?
+                    b.publisher LIKE ?
                 )
             """
-            params.extend([like] * 6)
+            params.extend([like] * 4)
         if shelf_id:
             sql += " AND s.id = ?"
             params.append(shelf_id)
@@ -501,18 +558,14 @@ class LibraryService:
             conn.execute(
                 """
                 UPDATE books
-                SET isbn = ?, book_no = ?, title = ?, author = ?, publisher = ?,
-                    category = ?, price = ?, publish_date = ?, description = ?,
-                    updated_at = ?
+                SET title = ?, author = ?, publisher = ?, price = ?,
+                    publish_date = ?, description = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
-                    updates["isbn"],
-                    updates["book_no"],
                     updates["title"],
                     updates["author"],
                     updates["publisher"],
-                    updates["category"],
                     updates["price"],
                     updates["publish_date"],
                     updates["description"],
@@ -926,12 +979,9 @@ class LibraryService:
         headers = [
             "书架",
             "条码",
-            "书号",
-            "ISBN",
             "书名",
             "作者",
             "出版社",
-            "分类",
             "库存数量",
         ]
         with open(path, "w", encoding="utf-8-sig", newline="") as file:
@@ -942,12 +992,9 @@ class LibraryService:
                     [
                         row["shelf_name"],
                         excel_text(row["barcode"]),
-                        excel_text(row["book_no"]),
-                        excel_text(row["isbn"]),
                         row["title"],
                         row["author"],
                         row["publisher"],
-                        row["category"],
                         row["quantity"],
                     ]
                 )

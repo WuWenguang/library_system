@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,12 +29,9 @@ class LibraryServiceTest(unittest.TestCase):
             batch_id,
             {
                 "barcode": barcode,
-                "isbn": "9780000000001",
-                "book_no": "000001",
                 "title": "测试图书",
                 "author": "作者",
                 "publisher": "出版社",
-                "category": "管理",
             },
             self.shelf_id,
             quantity,
@@ -41,7 +39,7 @@ class LibraryServiceTest(unittest.TestCase):
         self.service.confirm_inbound_batch(batch_id)
         return batch_id
 
-    def test_new_and_old_inbound_keep_numeric_fields_as_text(self) -> None:
+    def test_new_and_old_inbound_keep_barcode_as_text(self) -> None:
         self.inbound_book(quantity=3)
         second_batch = self.service.create_inbound_batch("old")
         self.service.add_inbound_item(
@@ -54,13 +52,11 @@ class LibraryServiceTest(unittest.TestCase):
 
         inventory = self.service.list_inventory("001234567890")
         self.assertEqual(inventory[0]["quantity"], 5)
-        self.assertEqual(inventory[0]["book_no"], "000001")
 
         reader_id = self.service.save_reader("张三", "13800000000", "行政部")
         row = self.service.db.connect().execute(
             """
-            SELECT typeof(book_no) AS book_no_type,
-                   typeof(barcode) AS barcode_type
+            SELECT typeof(barcode) AS barcode_type
             FROM books
             WHERE barcode = ?
             """,
@@ -70,21 +66,25 @@ class LibraryServiceTest(unittest.TestCase):
             "SELECT typeof(phone) AS phone_type FROM readers WHERE id = ?",
             (reader_id,),
         ).fetchone()
-        self.assertEqual(row["book_no_type"], "text")
         self.assertEqual(row["barcode_type"], "text")
         self.assertEqual(phone_row["phone_type"], "text")
+        book_columns = {
+            column["name"]
+            for column in self.service.db.connect().execute("PRAGMA table_info(books)")
+        }
+        self.assertFalse({"isbn", "book_no", "category"} & book_columns)
 
     def test_inbound_item_can_be_modified_before_confirm(self) -> None:
         batch_id = self.service.create_inbound_batch()
         item_id = self.service.add_inbound_item(
             batch_id,
-            {"barcode": "0009", "book_no": "09", "title": "待修改图书"},
+            {"barcode": "0009", "title": "待修改图书"},
             self.shelf_id,
             1,
         )
         self.service.update_inbound_item(
             item_id,
-            {"barcode": "0009", "book_no": "09", "title": "已修改图书"},
+            {"barcode": "0009", "title": "已修改图书"},
             self.shelf_id,
             4,
         )
@@ -102,12 +102,9 @@ class LibraryServiceTest(unittest.TestCase):
             row["shelf_id"],
             1,
             {
-                "isbn": row["isbn"],
-                "book_no": row["book_no"],
                 "title": "测试图书修正",
                 "author": row["author"],
                 "publisher": row["publisher"],
-                "category": row["category"],
                 "price": "",
                 "publish_date": "",
                 "description": "",
@@ -160,7 +157,91 @@ class LibraryServiceTest(unittest.TestCase):
         with path.open("r", encoding="utf-8-sig", newline="") as file:
             rows = list(csv.reader(file))
         self.assertEqual(rows[1][1], '="001234567890"')
-        self.assertEqual(rows[1][2], '="000001"')
+        self.assertEqual(rows[0], ["书架", "条码", "书名", "作者", "出版社", "库存数量"])
+
+    def test_shelf_can_be_updated_deleted_and_recreated(self) -> None:
+        shelf_id = self.service.add_shelf("临时书架", "旧备注")
+        self.service.update_shelf(shelf_id, "临时书架2", "新备注")
+
+        shelf = next(row for row in self.service.list_shelves() if row["id"] == shelf_id)
+        self.assertEqual(shelf["name"], "临时书架2")
+        self.assertEqual(shelf["note"], "新备注")
+
+        self.service.set_shelf_active(shelf_id, False)
+        self.assertNotIn(shelf_id, {row["id"] for row in self.service.list_shelves()})
+
+        recreated_id = self.service.add_shelf("临时书架2", "恢复")
+        self.assertEqual(recreated_id, shelf_id)
+        shelf = next(row for row in self.service.list_shelves() if row["id"] == shelf_id)
+        self.assertEqual(shelf["note"], "恢复")
+
+    def test_reason_can_be_updated_deleted_and_recreated(self) -> None:
+        reason_id = self.service.add_reason("stock_adjust", "临时原因")
+        self.service.update_reason(reason_id, "stock_adjust", "临时原因2")
+
+        reason = next(row for row in self.service.list_reasons("stock_adjust") if row["id"] == reason_id)
+        self.assertEqual(reason["name"], "临时原因2")
+
+        self.service.set_reason_active(reason_id, False)
+        self.assertNotIn(reason_id, {row["id"] for row in self.service.list_reasons("stock_adjust")})
+
+        recreated_id = self.service.add_reason("stock_adjust", "临时原因2")
+        self.assertEqual(recreated_id, reason_id)
+
+    def test_database_migration_removes_removed_book_columns(self) -> None:
+        path = Path(self.tmp.name) / "legacy.db"
+        conn = sqlite3.connect(path)
+        conn.executescript(
+            """
+            CREATE TABLE books (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                barcode TEXT NOT NULL UNIQUE,
+                isbn TEXT NOT NULL DEFAULT '',
+                book_no TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT '',
+                publisher TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                price TEXT NOT NULL DEFAULT '',
+                publish_date TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE inbound_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                book_id INTEGER,
+                barcode TEXT NOT NULL,
+                isbn TEXT NOT NULL DEFAULT '',
+                book_no TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                author TEXT NOT NULL DEFAULT '',
+                publisher TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                shelf_id INTEGER NOT NULL,
+                quantity INTEGER NOT NULL CHECK(quantity > 0),
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO books(barcode, isbn, book_no, title, category, created_at, updated_at)
+            VALUES('0001', '9781', 'B001', '旧书', '旧分类', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+            """
+        )
+        conn.close()
+
+        service = LibraryService(Database(path))
+        try:
+            for table in ("books", "inbound_items"):
+                columns = {
+                    column["name"]
+                    for column in service.db.connect().execute(f"PRAGMA table_info({table})")
+                }
+                self.assertFalse({"isbn", "book_no", "category"} & columns)
+            self.assertEqual(service.find_book_by_barcode("0001")["title"], "旧书")
+        finally:
+            service.db.close()
 
 
 if __name__ == "__main__":

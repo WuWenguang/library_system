@@ -38,12 +38,9 @@ CREATE TABLE IF NOT EXISTS reason_codes (
 CREATE TABLE IF NOT EXISTS books (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     barcode TEXT NOT NULL UNIQUE,
-    isbn TEXT NOT NULL DEFAULT '',
-    book_no TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL,
     author TEXT NOT NULL DEFAULT '',
     publisher TEXT NOT NULL DEFAULT '',
-    category TEXT NOT NULL DEFAULT '',
     price TEXT NOT NULL DEFAULT '',
     publish_date TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
@@ -74,12 +71,9 @@ CREATE TABLE IF NOT EXISTS inbound_items (
     batch_id INTEGER NOT NULL REFERENCES inbound_batches(id) ON DELETE CASCADE,
     book_id INTEGER REFERENCES books(id),
     barcode TEXT NOT NULL,
-    isbn TEXT NOT NULL DEFAULT '',
-    book_no TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL DEFAULT '',
     author TEXT NOT NULL DEFAULT '',
     publisher TEXT NOT NULL DEFAULT '',
-    category TEXT NOT NULL DEFAULT '',
     shelf_id INTEGER NOT NULL REFERENCES shelves(id),
     quantity INTEGER NOT NULL CHECK(quantity > 0),
     note TEXT NOT NULL DEFAULT '',
@@ -182,6 +176,7 @@ class Database:
     def initialize(self) -> None:
         conn = self.connect()
         conn.executescript(SCHEMA)
+        self._drop_removed_book_columns()
         from .services import now_text
 
         now = now_text()
@@ -204,6 +199,17 @@ class Database:
                     (category, name, now),
                 )
         conn.commit()
+
+    def _drop_removed_book_columns(self) -> None:
+        conn = self.connect()
+        for table in ("books", "inbound_items"):
+            existing = {
+                row["name"]
+                for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            for column in ("isbn", "book_no", "category"):
+                if column in existing:
+                    conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

@@ -207,9 +207,29 @@ class WebLibraryApp:
                 shelf_id = self.service.add_shelf(data.get("name", ""), data.get("note", ""))
                 self.send_json(handler, {"id": shelf_id})
                 return
+            if method == "PUT" and path.startswith("/api/shelves/"):
+                shelf_id = int(path.rsplit("/", 1)[1])
+                self.service.update_shelf(shelf_id, data.get("name", ""), data.get("note", ""))
+                self.send_json(handler, {"ok": True})
+                return
+            if method == "DELETE" and path.startswith("/api/shelves/"):
+                shelf_id = int(path.rsplit("/", 1)[1])
+                self.service.set_shelf_active(shelf_id, False)
+                self.send_json(handler, {"ok": True})
+                return
             if method == "POST" and path == "/api/reasons":
                 reason_id = self.service.add_reason(data.get("category", ""), data.get("name", ""))
                 self.send_json(handler, {"id": reason_id})
+                return
+            if method == "PUT" and path.startswith("/api/reasons/"):
+                reason_id = int(path.rsplit("/", 1)[1])
+                self.service.update_reason(reason_id, data.get("category", ""), data.get("name", ""))
+                self.send_json(handler, {"ok": True})
+                return
+            if method == "DELETE" and path.startswith("/api/reasons/"):
+                reason_id = int(path.rsplit("/", 1)[1])
+                self.service.set_reason_active(reason_id, False)
+                self.send_json(handler, {"ok": True})
                 return
 
             self.send_json(handler, {"error": "未找到接口"}, HTTPStatus.NOT_FOUND)
@@ -457,9 +477,6 @@ INDEX_HTML = r"""
           <div><label>书名</label><input id="inTitle"></div>
           <div><label>作者</label><input id="inAuthor"></div>
           <div><label>出版社</label><input id="inPublisher"></div>
-          <div><label>ISBN</label><input id="inIsbn"></div>
-          <div><label>书号</label><input id="inBookNo"></div>
-          <div><label>分类</label><input id="inCategory"></div>
           <div><label>书架</label><select id="inShelf"></select></div>
           <div><label>数量</label><input id="inQty" value="1"></div>
           <div><label>备注</label><input id="inNote"></div>
@@ -484,9 +501,6 @@ INDEX_HTML = r"""
           <div><label>书名</label><input id="editTitle"></div>
           <div><label>作者</label><input id="editAuthor"></div>
           <div><label>出版社</label><input id="editPublisher"></div>
-          <div><label>ISBN</label><input id="editIsbn"></div>
-          <div><label>书号</label><input id="editBookNo"></div>
-          <div><label>分类</label><input id="editCategory"></div>
           <div><label>价格</label><input id="editPrice"></div>
           <div><label>出版日期</label><input id="editPublishDate"></div>
           <div><label>库存数量</label><input id="editQty"></div>
@@ -564,6 +578,8 @@ INDEX_HTML = r"""
           <div><label>书架名</label><input id="newShelf"></div>
           <div><label>备注</label><input id="newShelfNote"></div>
           <button class="primary" onclick="addShelf()">新增书架</button>
+          <button class="secondary" onclick="updateShelf()">保存修改</button>
+          <button class="danger" onclick="deleteShelf()">删除选中</button>
         </div>
         <table id="shelfTable"></table>
         <h3>原因配置</h3>
@@ -571,6 +587,8 @@ INDEX_HTML = r"""
           <div><label>分类</label><select id="reasonCategory"><option value="stock_adjust">库存/图书修改</option><option value="renewal">续借原因</option><option value="lost_damage">丢失报损原因</option></select></div>
           <div><label>原因</label><input id="newReason"></div>
           <button class="primary" onclick="addReason()">新增原因</button>
+          <button class="secondary" onclick="updateReason()">保存修改</button>
+          <button class="danger" onclick="deleteReason()">删除选中</button>
         </div>
         <table id="reasonTable"></table>
       </section>
@@ -583,7 +601,7 @@ const pages = [
 ];
 let state = { shelves: [], reasons: {}, settings: {}, currentBatch: null, selectedInbound: null,
   selectedInventory: null, selectedReader: null, borrowReader: null, returnReader: null,
-  borrowBarcodes: [], returnBarcodes: [] };
+  selectedShelf: null, selectedReason: null, borrowBarcodes: [], returnBarcodes: [] };
 
 function $(id) { return document.getElementById(id); }
 function setStatus(text, cls="") { const el=$("status"); el.textContent=text; el.className="status " + cls; }
@@ -674,14 +692,13 @@ async function lookupBook() {
   const data = await api("/api/book?barcode=" + encodeURIComponent(value("inBarcode")));
   if (data.book) {
     $("inTitle").value = data.book.title; $("inAuthor").value = data.book.author; $("inPublisher").value = data.book.publisher;
-    $("inIsbn").value = data.book.isbn; $("inBookNo").value = data.book.book_no; $("inCategory").value = data.book.category;
     setStatus("该图书已入库，可直接录入入库数量", "ok");
   } else {
     setStatus("新书条码，请录入详细信息");
   }
 }
 function inboundBook() {
-  return {barcode:value("inBarcode"), title:value("inTitle"), author:value("inAuthor"), publisher:value("inPublisher"), isbn:value("inIsbn"), book_no:value("inBookNo"), category:value("inCategory")};
+  return {barcode:value("inBarcode"), title:value("inTitle"), author:value("inAuthor"), publisher:value("inPublisher")};
 }
 async function saveInboundItem(edit) {
   if (!state.currentBatch) await createBatch();
@@ -702,9 +719,9 @@ async function deleteInboundItem() {
 async function loadInboundItems() {
   if (!state.currentBatch) return renderTable("inboundTable", [["empty","流水"]], []);
   const data = await api("/api/inbound/items?batch_id=" + state.currentBatch.id);
-  renderTable("inboundTable", [["barcode","条码"],["title","书名"],["author","作者"],["publisher","出版社"],["isbn","ISBN"],["book_no","书号"],["category","分类"],["shelf_name","书架"],["quantity","数量"],["note","备注"]], data.items, row => {
+  renderTable("inboundTable", [["barcode","条码"],["title","书名"],["author","作者"],["publisher","出版社"],["shelf_name","书架"],["quantity","数量"],["note","备注"]], data.items, row => {
     state.selectedInbound=row; $("inBarcode").value=row.barcode; $("inTitle").value=row.title; $("inAuthor").value=row.author; $("inPublisher").value=row.publisher;
-    $("inIsbn").value=row.isbn; $("inBookNo").value=row.book_no; $("inCategory").value=row.category; $("inShelf").value=row.shelf_id; $("inQty").value=row.quantity; $("inNote").value=row.note;
+    $("inShelf").value=row.shelf_id; $("inQty").value=row.quantity; $("inNote").value=row.note;
   });
 }
 async function confirmBatch() {
@@ -716,16 +733,16 @@ async function confirmBatch() {
 async function loadInventory() {
   const q = new URLSearchParams({keyword:value("invKeyword"), shelf_id:value("invShelfFilter")});
   const data = await api("/api/inventory?" + q);
-  renderTable("inventoryTable", [["barcode","条码"],["title","书名"],["author","作者"],["publisher","出版社"],["isbn","ISBN"],["book_no","书号"],["category","分类"],["shelf_name","书架"],["quantity","库存"]], data.items, row => {
+  renderTable("inventoryTable", [["barcode","条码"],["title","书名"],["author","作者"],["publisher","出版社"],["shelf_name","书架"],["quantity","库存"]], data.items, row => {
     state.selectedInventory=row; $("editTitle").value=row.title; $("editAuthor").value=row.author; $("editPublisher").value=row.publisher;
-    $("editIsbn").value=row.isbn; $("editBookNo").value=row.book_no; $("editCategory").value=row.category; $("editPrice").value=row.price;
+    $("editPrice").value=row.price;
     $("editPublishDate").value=row.publish_date; $("editQty").value=row.quantity; $("editNote").value="";
   });
 }
 async function adjustInventory() {
   if (!state.selectedInventory) return setStatus("请选择库存记录", "error");
   await mutate("/api/inventory/adjust", {book_id:state.selectedInventory.book_id, shelf_id:state.selectedInventory.shelf_id, quantity:value("editQty"),
-    reason_id:value("editReason"), note:value("editNote"), book:{isbn:value("editIsbn"), book_no:value("editBookNo"), title:value("editTitle"), author:value("editAuthor"), publisher:value("editPublisher"), category:value("editCategory"), price:value("editPrice"), publish_date:value("editPublishDate"), description:""}});
+    reason_id:value("editReason"), note:value("editNote"), book:{title:value("editTitle"), author:value("editAuthor"), publisher:value("editPublisher"), price:value("editPrice"), publish_date:value("editPublishDate"), description:""}});
   await loadInventory();
 }
 function exportInventory() { window.location.href = "/export/inventory.csv?shelf_id=" + encodeURIComponent(value("invShelfFilter")); }
@@ -764,12 +781,40 @@ function renderStage(id, rows) { renderTable(id, [["i","序号"],["barcode","条
 async function confirmBorrow() { if (!state.borrowReader) return setStatus("请先选择读者", "error"); await mutate("/api/borrow", {reader_id:state.borrowReader.id, barcodes:state.borrowBarcodes}); state.borrowBarcodes=[]; renderStage("borrowStageTable", []); await searchBorrowReturn("borrow"); }
 async function confirmReturn() { if (!state.returnReader) return setStatus("请先选择读者", "error"); await mutate("/api/return", {reader_id:state.returnReader.id, barcodes:state.returnBarcodes}); state.returnBarcodes=[]; renderStage("returnStageTable", []); await searchBorrowReturn("return"); }
 async function saveSettings() { await mutate("/api/settings", {default_borrow_days:value("defaultBorrowDays"), renewal_days:value("renewalDays")}); await refreshLookups(); }
-async function addShelf() { await mutate("/api/shelves", {name:value("newShelf"), note:value("newShelfNote")}); $("newShelf").value=""; $("newShelfNote").value=""; await refreshLookups(); }
-async function addReason() { await mutate("/api/reasons", {category:value("reasonCategory"), name:value("newReason")}); $("newReason").value=""; await refreshLookups(); }
+function clearShelfForm() { state.selectedShelf = null; $("newShelf").value=""; $("newShelfNote").value=""; }
+function clearReasonForm() { state.selectedReason = null; $("newReason").value=""; }
+async function addShelf() { await mutate("/api/shelves", {name:value("newShelf"), note:value("newShelfNote")}); clearShelfForm(); await refreshLookups(); }
+async function updateShelf() {
+  if (!state.selectedShelf) return setStatus("请选择要修改的书架", "error");
+  await mutate("/api/shelves/" + state.selectedShelf.id, {name:value("newShelf"), note:value("newShelfNote")}, "PUT");
+  clearShelfForm(); await refreshLookups();
+}
+async function deleteShelf() {
+  if (!state.selectedShelf) return setStatus("请选择要删除的书架", "error");
+  if (!confirm("确定删除选中的书架？历史库存和借阅记录会保留。")) return;
+  await mutate("/api/shelves/" + state.selectedShelf.id, {}, "DELETE");
+  clearShelfForm(); await refreshLookups(); await loadInventory();
+}
+async function addReason() { await mutate("/api/reasons", {category:value("reasonCategory"), name:value("newReason")}); clearReasonForm(); await refreshLookups(); }
+async function updateReason() {
+  if (!state.selectedReason) return setStatus("请选择要修改的原因", "error");
+  await mutate("/api/reasons/" + state.selectedReason.id, {category:value("reasonCategory"), name:value("newReason")}, "PUT");
+  clearReasonForm(); await refreshLookups();
+}
+async function deleteReason() {
+  if (!state.selectedReason) return setStatus("请选择要删除的原因", "error");
+  if (!confirm("确定删除选中的原因？历史日志会保留。")) return;
+  await mutate("/api/reasons/" + state.selectedReason.id, {}, "DELETE");
+  clearReasonForm(); await refreshLookups();
+}
 function renderSettingsTables() {
-  renderTable("shelfTable", [["name","书架名称"],["note","备注"]], state.shelves);
+  renderTable("shelfTable", [["name","书架名称"],["note","备注"]], state.shelves, row => {
+    state.selectedShelf = row; $("newShelf").value = row.name; $("newShelfNote").value = row.note;
+  });
   const allReasons = Object.entries(state.reasons).flatMap(([category, rows]) => rows.map(r => ({...r, category})));
-  renderTable("reasonTable", [["category","分类"],["name","原因"]], allReasons);
+  renderTable("reasonTable", [["category","分类"],["name","原因"]], allReasons, row => {
+    state.selectedReason = row; $("reasonCategory").value = row.category; $("newReason").value = row.name;
+  });
 }
 window.onerror = (msg) => setStatus(String(msg), "error");
 (async function init(){
