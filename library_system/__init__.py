@@ -1,0 +1,2 @@
+"""Local library lending system."""
+
